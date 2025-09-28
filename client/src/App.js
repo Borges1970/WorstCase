@@ -174,8 +174,10 @@ export default function App(){
               <ul className="space-y-2">
                 {room.players.map((p,idx) => (
                   <li key={p.id} className={`flex items-center justify-between rounded px-2 py-1 ${p.id===myId?'bg-indigo-50':''}`}>
-                    <span className="truncate">
-                      {idx===room.victimIdx ? '🎯 ' : ''}{p.avatar} {p.name}{p.id===myId?' (you)':''}
+                    <span className="truncate flex items-center gap-1">
+                      {idx===room.victimIdx ? '🎯 ' : ''}
+                      {p.avatar} {p.name}{p.id===myId?' (you)':''}
+                      {getPlayerStatusIcon(room, p)}
                     </span>
                     <span className="font-mono">{p.score}</span>
                   </li>
@@ -365,6 +367,30 @@ function isPerm15(a){
 function playerName(room, id){
   const p = room.players.find(x=>x.id===id);
   return p ? `${p.avatar} ${p.name}` : 'Unknown';
+}
+
+function getPlayerStatusIcon(room, player) {
+  // Only show status icons during active game phases
+  if (!['victimRank', 'placing'].includes(room.stage)) {
+    return null;
+  }
+
+  const status = player.status;
+  if (!status) return null;
+
+  if (status.hasSubmitted) {
+    return <span className="text-green-500 text-sm" title="Selection complete">✓</span>;
+  } else if (status.role === 'victim' && room.stage === 'victimRank') {
+    return <span className="text-yellow-500 text-sm" title="Ranking scenarios...">⏳</span>;
+  } else if (status.role === 'guesser' && room.stage === 'placing') {
+    return <span className="text-yellow-500 text-sm" title="Placing guesses...">⏳</span>;
+  } else if (status.role === 'guesser' && room.stage === 'victimRank') {
+    return <span className="text-gray-400 text-sm" title="Waiting for victim">⏸️</span>;
+  } else if (status.role === 'victim' && room.stage === 'placing') {
+    return <span className="text-gray-400 text-sm" title="Waiting for guesses">⏸️</span>;
+  }
+
+  return null;
 }
 
 /** Drag and Drop Ranking Interface */

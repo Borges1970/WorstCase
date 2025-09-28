@@ -79,7 +79,13 @@ function publicRoom(room){
     roundIndex: room.roundIndex,
     roundsToPlay: room.roundsToPlay,
     victimIdx: room.victimIdx,
-    players: room.players.map(p => ({ id:p.id, name:p.name, avatar:p.avatar, score:p.score })),
+    players: room.players.map(p => ({
+      id:p.id,
+      name:p.name,
+      avatar:p.avatar,
+      score:p.score,
+      status: room.playerStatus[p.id] || { hasSubmitted: false, role: null }
+    })),
     currentCards: room.currentCards, // 5 card texts (public to all)
     chat: room.chat.slice(-100),
     roundEndData: room.roundEndData, // reveal data during pause
@@ -108,6 +114,7 @@ io.on('connection', (socket) => {
       guesses: {},           // playerId -> array[5] permutation 1..5
       chat: [],
       roundEndData: null,    // stores reveal data during pause
+      playerStatus: {},      // playerId -> { hasSubmitted: boolean, role: 'victim'|'guesser' }
     };
     rooms[roomId] = room;
 
@@ -163,6 +170,15 @@ io.on('connection', (socket) => {
     room.victimRanking = null;
     room.guesses = {};
 
+    // Initialize player status for this round
+    room.playerStatus = {};
+    room.players.forEach(player => {
+      room.playerStatus[player.id] = {
+        hasSubmitted: false,
+        role: room.players[room.victimIdx].id === player.id ? 'victim' : 'guesser'
+      };
+    });
+
     io.to(room.id).emit('roundStarted', { room: publicRoom(room) });
 
     // DM the victim (who needs to send a ranking)
@@ -185,6 +201,9 @@ io.on('connection', (socket) => {
     if (!isValidPerm15(ranking)) return socket.emit('errorMsg','Ranking must be a permutation of 1..5');
     room.victimRanking = ranking.slice();
 
+    // Mark victim as submitted
+    room.playerStatus[socket.id].hasSubmitted = true;
+
     // Announce to all to start placing guesses
     room.stage = 'placing';
     io.to(room.id).emit('placingBegan', { room: publicRoom(room) });
@@ -201,11 +220,11 @@ io.on('connection', (socket) => {
     if (!isValidPerm15(guess)) return socket.emit('errorMsg','Your chips must be 1..5, used once each');
     room.guesses[socket.id] = guess.slice();
 
-    // Progress ping
-    io.to(room.id).emit('placingProgress', {
-      placed: Object.keys(room.guesses).length,
-      needed: room.players.length - 1
-    });
+    // Mark player as submitted
+    room.playerStatus[socket.id].hasSubmitted = true;
+
+    // Send updated room data to show completion status
+    io.to(room.id).emit('roomUpdate', publicRoom(room));
 
     // When all non-victims have placed and victimRanking is ready, reveal + score
     const nonVictims = room.players.filter((_, idx) => idx !== room.victimIdx);
