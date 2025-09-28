@@ -74,7 +74,7 @@ function roundsForPlayerCount(n){
 function publicRoom(room){
   return {
     id: room.id,
-    stage: room.stage, // lobby|selecting|reveal|roundEnd|finished
+    stage: room.stage, // lobby|spinning|selecting|cardReveal|reveal|roundEnd|finished
     spinner: room.spinner,
     roundIndex: room.roundIndex,
     roundsToPlay: room.roundsToPlay,
@@ -87,8 +87,9 @@ function publicRoom(room){
       status: room.playerStatus[p.id] || { hasSubmitted: false, role: null }
     })),
     currentCards: room.currentCards, // 5 card texts (public to all)
-    chat: room.chat.slice(-100),
     roundEndData: room.roundEndData, // reveal data during pause
+    revealData: room.revealData, // complete reveal data for card-by-card
+    cardsRevealed: room.cardsRevealed, // which cards have been revealed
   };
 }
 
@@ -112,9 +113,10 @@ io.on('connection', (socket) => {
       currentCards: [],
       victimRanking: null,    // array[5] of 1..5 set by victim (index = cardIdx)
       guesses: {},           // playerId -> array[5] permutation 1..5
-      chat: [],
       roundEndData: null,    // stores reveal data during pause
       playerStatus: {},      // playerId -> { hasSubmitted: boolean, role: 'victim'|'guesser' }
+      revealData: null,      // stores complete reveal data for card-by-card reveal
+      cardsRevealed: [],     // array of card indices that have been revealed
     };
     rooms[roomId] = room;
 
@@ -141,13 +143,6 @@ io.on('connection', (socket) => {
     socket.to(roomId).emit('roomUpdate', publicRoom(room));
   });
 
-  socket.on('sendChat', ({ roomId, message }) => {
-    const room = rooms[roomId]; if (!room) return;
-    const p = room.players.find(x=>x.id===socket.id); if(!p) return;
-    room.chat.push({ player: p.name, avatar: p.avatar, message: String(message||'').slice(0,400) });
-    io.to(roomId).emit('chatUpdate', room.chat.slice(-100));
-  });
-
   // --- START GAME ---
   socket.on('startGame', ({ roomId }) => {
     const room = rooms[roomId]; if (!room) return;
@@ -168,8 +163,8 @@ io.on('connection', (socket) => {
       room.deck.push(...shuffle(room.discards));
       room.discards.length = 0;
     }
-    room.spinner = spinnerResult();
-    room.stage = 'selecting'; // Both victim and players can select simultaneously
+    room.spinner = null; // Will be set when victim spins
+    room.stage = 'spinning'; // Victim needs to spin first
     room.currentCards = room.deck.splice(0,5);
     room.victimRanking = null;
     room.guesses = {};
@@ -185,14 +180,40 @@ io.on('connection', (socket) => {
 
     io.to(room.id).emit('roundStarted', { room: publicRoom(room) });
 
-    // DM the victim (who needs to send a ranking)
+    // DM the victim (who needs to spin the wheel)
     const victim = room.players[room.victimIdx];
+    io.to(victim.id).emit('youAreVictim', {
+      cards: room.currentCards,
+      spinner: room.spinner,
+      requireSpin: true
+    });
+  }
+
+  // Victim spins the wheel
+  socket.on('spinWheel', ({ roomId }) => {
+    const room = rooms[roomId]; if (!room) return;
+    if (room.stage !== 'spinning') return;
+
+    const victim = room.players[room.victimIdx];
+    if (victim.id !== socket.id) return socket.emit('errorMsg','Only Victim can spin the wheel');
+
+    // Generate spinner result
+    room.spinner = spinnerResult();
+    room.stage = 'selecting';
+
+    // Notify everyone about the spinner result and start selection
+    io.to(room.id).emit('spinComplete', {
+      spinner: room.spinner,
+      room: publicRoom(room)
+    });
+
+    // DM the victim (who now needs to rank)
     io.to(victim.id).emit('youAreVictim', {
       cards: room.currentCards,
       spinner: room.spinner,
       requireRanking: true
     });
-  }
+  });
 
   // Victim submits secret ranking: array of 5 numbers (1..5), permutation
   socket.on('victimRanking', ({ roomId, ranking }) => {
@@ -236,7 +257,7 @@ io.on('connection', (socket) => {
     checkForRoundCompletion(room);
   });
 
-  // Check if all players have submitted and we can reveal
+  // Check if all players have submitted and we can start card reveal
   function checkForRoundCompletion(room) {
     const victim = room.players[room.victimIdx];
     const nonVictims = room.players.filter((_, idx) => idx !== room.victimIdx);
@@ -245,9 +266,88 @@ io.on('connection', (socket) => {
     const allPlayersDone = nonVictims.every(p => room.guesses[p.id]);
 
     if (victimDone && allPlayersDone) {
-      scoreAndReveal(room);
+      startCardReveal(room);
     }
   }
+
+  // Start the card-by-card reveal phase
+  function startCardReveal(room) {
+    room.stage = 'cardReveal';
+    room.cardsRevealed = [];
+
+    // Pre-calculate all reveal data
+    const victimId = room.players[room.victimIdx].id;
+    const vRank = room.victimRanking;
+    const cardCount = room.currentCards.length;
+
+    const revealRows = [];
+    for (let i = 0; i < cardCount; i++) {
+      const victRankForCard = vRank[i];
+      const row = {
+        cardIdx: i,
+        cardText: room.currentCards[i],
+        victimRank: victRankForCard,
+        playerResults: []
+      };
+
+      for (const pl of room.players) {
+        if (pl.id === victimId) continue;
+        const g = room.guesses[pl.id];
+        const chipPlaced = g ? g[i] : null;
+        const match = (chipPlaced === victRankForCard);
+        row.playerResults.push({
+          playerId: pl.id,
+          playerName: pl.name,
+          playerAvatar: pl.avatar,
+          chipPlaced,
+          match
+        });
+      }
+      revealRows.push(row);
+    }
+
+    room.revealData = { cards: revealRows };
+
+    // Notify everyone that card reveal phase has started
+    io.to(room.id).emit('cardRevealStarted', { room: publicRoom(room) });
+
+    // Tell victim they can start revealing cards
+    const victim = room.players[room.victimIdx];
+    io.to(victim.id).emit('youCanRevealCards', {
+      room: publicRoom(room)
+    });
+  }
+
+  // Victim reveals a specific card
+  socket.on('revealCard', ({ roomId, cardIndex }) => {
+    const room = rooms[roomId]; if (!room) return;
+    if (room.stage !== 'cardReveal') return;
+
+    const victim = room.players[room.victimIdx];
+    if (victim.id !== socket.id) return socket.emit('errorMsg','Only Victim can reveal cards');
+
+    if (room.cardsRevealed.includes(cardIndex)) return; // Already revealed
+    if (cardIndex < 0 || cardIndex >= room.currentCards.length) return; // Invalid index
+
+    // Mark card as revealed
+    room.cardsRevealed.push(cardIndex);
+
+    // Send the revealed card data to everyone
+    const cardData = room.revealData.cards[cardIndex];
+    io.to(room.id).emit('cardRevealed', {
+      cardIndex,
+      cardData,
+      cardsRevealed: room.cardsRevealed,
+      allCardsRevealed: room.cardsRevealed.length === room.currentCards.length
+    });
+
+    // If all cards revealed, proceed to final scoring
+    if (room.cardsRevealed.length === room.currentCards.length) {
+      setTimeout(() => {
+        scoreAndReveal(room);
+      }, 2000); // Brief pause before final score summary
+    }
+  });
 
   function scoreAndReveal(room){
     room.stage = 'reveal';

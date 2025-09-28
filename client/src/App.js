@@ -20,12 +20,11 @@ export default function App(){
   const [me, setMe] = useState(null);
 
   const [room, setRoom] = useState(null);
-  const [chat, setChat] = useState([]);
-  const [msg, setMsg] = useState('');
   const [shareableLink, setShareableLink] = useState('');
 
-  // Victim-only ranking state
+  // Victim-only state
   const [iAmVictim, setIAmVictim] = useState(false);
+  const [victimNeedsSpin, setVictimNeedsSpin] = useState(false);
   const [victimNeedsRanking, setVictimNeedsRanking] = useState(false);
   const [victimRanking, setVictimRanking] = useState([null,null,null,null,null]);
 
@@ -34,6 +33,10 @@ export default function App(){
 
   // Reveal payload from server
   const [reveal, setReveal] = useState(null);
+  const [cardRevealData, setCardRevealData] = useState({});
+  const [cardsRevealed, setCardsRevealed] = useState([]);
+  const [canRevealCards, setCanRevealCards] = useState(false);
+  const [scoreHistory, setScoreHistory] = useState([]);
 
   const myId = me?.id;
 
@@ -63,22 +66,44 @@ export default function App(){
       window.history.pushState({}, '', link);
     });
     socket.on('roomUpdate', (r) => setRoom(r));
-    socket.on('chatUpdate', (c) => setChat(c));
     socket.on('errorMsg', (msg) => alert(msg));
 
     // Round lifecycle
     socket.on('roundStarted', ({ room }) => {
       setRoom(room);
       setReveal(null);
+      setVictimNeedsSpin(false);
       setVictimNeedsRanking(false);
       setVictimRanking([null,null,null,null,null]);
       setMyGuess([null,null,null,null,null]);
       setIAmVictim(room.players?.[room.victimIdx]?.id === socket.id);
     });
 
-    socket.on('youAreVictim', ({ requireRanking }) => {
+    socket.on('youAreVictim', ({ requireSpin, requireRanking }) => {
       setIAmVictim(true);
+      setVictimNeedsSpin(!!requireSpin);
       setVictimNeedsRanking(!!requireRanking);
+    });
+
+    socket.on('spinComplete', ({ spinner, room }) => {
+      setRoom(room);
+      setVictimNeedsSpin(false);
+    });
+
+    socket.on('cardRevealStarted', ({ room }) => {
+      setRoom(room);
+      setCardRevealData({});
+      setCardsRevealed([]);
+      setCanRevealCards(false);
+    });
+
+    socket.on('youCanRevealCards', ({ room }) => {
+      setCanRevealCards(true);
+    });
+
+    socket.on('cardRevealed', ({ cardIndex, cardData, cardsRevealed, allCardsRevealed }) => {
+      setCardRevealData(prev => ({ ...prev, [cardIndex]: cardData }));
+      setCardsRevealed(cardsRevealed);
     });
 
     socket.on('placingBegan', ({ room }) => {
@@ -89,6 +114,21 @@ export default function App(){
 
     socket.on('reveal', (payload) => {
       setReveal(payload);
+      // Add score changes to history
+      if (payload.roundScores) {
+        const roundNum = room?.roundIndex - 1 || 0;
+        const scoreUpdates = payload.roundScores.map(score => ({
+          type: 'round',
+          round: roundNum,
+          playerId: score.playerId,
+          playerName: score.name,
+          playerAvatar: score.avatar,
+          gained: score.gained,
+          total: score.total,
+          timestamp: Date.now()
+        }));
+        setScoreHistory(prev => [...prev, ...scoreUpdates].slice(-50)); // Keep last 50 entries
+      }
     });
 
     socket.on('gameOver', (payload) => {
@@ -109,11 +149,6 @@ export default function App(){
   function createRoom(){ socket.emit('createRoom', { name }); }
   function joinRoom(){ socket.emit('joinRoom', { roomId, name }); }
   function startGame(){ socket.emit('startGame', { roomId }); }
-  function sendMessage(){
-    if (!msg.trim()) return;
-    socket.emit('sendChat', { roomId, message: msg.trim() });
-    setMsg('');
-  }
 
   function copyShareableLink(){
     navigator.clipboard.writeText(shareableLink).then(() => {
@@ -133,8 +168,16 @@ export default function App(){
     socket.emit('placeGuess', { roomId, guess: myGuess });
   }
 
+  function spinWheel(){
+    socket.emit('spinWheel', { roomId });
+  }
+
+  function revealCard(cardIndex){
+    socket.emit('revealCard', { roomId, cardIndex });
+  }
+
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
+    <div className="min-h-screen bg-slate-50 text-slate-900 pb-16">
       <div className="max-w-6xl mx-auto p-4">
         <header className="flex items-center justify-between mb-4">
           <h1 className="text-2xl font-bold text-indigo-600">Worst-Case Scenario — Online</h1>
@@ -154,7 +197,7 @@ export default function App(){
         )}
 
         {room && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Players & rounds */}
             <aside className="bg-white rounded-xl shadow p-4">
               <div className="flex items-center justify-between mb-2">
@@ -208,8 +251,8 @@ export default function App(){
             </aside>
 
             {/* Center: table & actions */}
-            <main className="bg-white rounded-xl shadow p-4 lg:col-span-2">
-              {['selecting','reveal','roundEnd','finished'].includes(room.stage) && (
+            <main className="bg-white rounded-xl shadow p-4">
+              {['spinning','selecting','cardReveal','reveal','roundEnd','finished'].includes(room.stage) && (
                 <div className="mb-3">
                   <div className="text-xs uppercase tracking-wider text-slate-500">Scenario Cards</div>
                   <ol className="mt-2 space-y-2">
@@ -217,6 +260,29 @@ export default function App(){
                       <li key={i} className="p-3 rounded border bg-slate-50">{i+1}. {c}</li>
                     ))}
                   </ol>
+                </div>
+              )}
+
+              {/* Spinner UI */}
+              {room.stage === 'spinning' && iAmVictim && victimNeedsSpin && (
+                <div className="text-center py-8">
+                  <div className="mb-6">
+                    <div className="text-2xl font-bold text-indigo-600 mb-2">You are the Victim!</div>
+                    <div className="text-lg text-slate-600">Spin the wheel to see what scoring rule applies this round</div>
+                  </div>
+                  <button
+                    onClick={spinWheel}
+                    className="inline-flex items-center gap-2 px-8 py-4 text-xl font-bold rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:from-purple-700 hover:to-indigo-700 transform hover:scale-105 transition-all duration-200 shadow-lg"
+                  >
+                    🎰 Spin the Wheel!
+                  </button>
+                </div>
+              )}
+
+              {room.stage === 'spinning' && !iAmVictim && (
+                <div className="text-center py-8">
+                  <div className="text-lg text-slate-500 mb-2">Waiting for the Victim to spin the wheel...</div>
+                  <div className="text-sm text-slate-400">Get ready to guess how they'll rank the scenarios!</div>
                 </div>
               )}
 
@@ -252,6 +318,79 @@ export default function App(){
                     className="mt-4 px-4 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700">
                     Submit Guess
                   </button>
+                </div>
+              )}
+
+              {/* Card Reveal Stage */}
+              {room.stage === 'cardReveal' && (
+                <div>
+                  <div className="text-center mb-6">
+                    <h2 className="text-xl font-bold text-indigo-600">Card Reveal</h2>
+                    <p className="text-sm text-slate-500 mt-1">
+                      {iAmVictim && canRevealCards ? 'Click each card to reveal your ranking and see who got it right!'
+                       : iAmVictim ? 'Get ready to reveal your rankings...'
+                       : 'Victim is revealing their rankings...'}
+                    </p>
+                  </div>
+
+                  <div className="space-y-4">
+                    {room.currentCards?.map((cardText, cardIdx) => (
+                      <div key={cardIdx} className="border rounded-lg overflow-hidden">
+                        {/* Card Header - Always Visible */}
+                        <div className="p-4 bg-slate-50 border-b">
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium">Card {cardIdx + 1}: {cardText}</span>
+                            {iAmVictim && canRevealCards && !cardsRevealed.includes(cardIdx) && (
+                              <button
+                                onClick={() => revealCard(cardIdx)}
+                                className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition-colors"
+                              >
+                                Reveal
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Card Results - Shown After Reveal */}
+                        {cardsRevealed.includes(cardIdx) && cardRevealData[cardIdx] && (
+                          <div className="p-4">
+                            <div className="mb-3">
+                              <span className="text-lg font-bold">
+                                Victim's Ranking:
+                                <span className={`ml-2 px-3 py-1 rounded-full text-white ${
+                                  cardRevealData[cardIdx].victimRank === 1 ? 'bg-green-500' :
+                                  cardRevealData[cardIdx].victimRank === 2 ? 'bg-yellow-500' :
+                                  cardRevealData[cardIdx].victimRank === 3 ? 'bg-orange-500' :
+                                  cardRevealData[cardIdx].victimRank === 4 ? 'bg-red-500' :
+                                  'bg-red-700'
+                                }`}>
+                                  {cardRevealData[cardIdx].victimRank}
+                                </span>
+                              </span>
+                            </div>
+
+                            <div className="space-y-1">
+                              <div className="text-sm font-medium text-slate-600 mb-2">Player Results:</div>
+                              {cardRevealData[cardIdx].playerResults.map(result => (
+                                <div key={result.playerId} className="flex items-center gap-2">
+                                  <span>{result.playerAvatar}</span>
+                                  <span className={`font-medium ${result.match ? 'text-green-600' : 'text-red-600'}`}>
+                                    {result.playerName}
+                                    {!result.match && result.chipPlaced !== null && (
+                                      <span className="text-slate-500"> ({result.chipPlaced})</span>
+                                    )}
+                                  </span>
+                                  <span className="text-sm">
+                                    {result.match ? '✓' : '✗'}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -330,23 +469,38 @@ export default function App(){
                 </div>
               )}
             </main>
-
-            {/* Chat */}
-            <aside className="bg-white rounded-xl shadow p-4">
-              <div className="font-semibold mb-2">Chat</div>
-              <div className="h-60 overflow-y-auto border rounded p-2 mb-2 bg-slate-50">
-                {chat.map((c,i)=>(
-                  <div key={i} className="text-sm"><span className="mr-1">{c.avatar}</span><span className="font-medium">{c.player}:</span> {c.message}</div>
-                ))}
-              </div>
-              <div className="flex gap-2">
-                <input className="border rounded p-2 flex-1" value={msg} onChange={e=>setMsg(e.target.value)} placeholder="Type a message"/>
-                <button onClick={sendMessage} className="px-3 py-2 rounded bg-slate-800 text-white hover:bg-slate-900">Send</button>
-              </div>
-            </aside>
           </div>
         )}
       </div>
+
+      {/* Score Log Window */}
+      {room && room.stage !== 'lobby' && scoreHistory.length > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg">
+          <div className="max-w-6xl mx-auto p-3">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold text-slate-700">Score Log</h3>
+              <button
+                onClick={() => setScoreHistory([])}
+                className="text-xs text-slate-500 hover:text-slate-700"
+              >
+                Clear
+              </button>
+            </div>
+            <div className="h-20 overflow-y-auto bg-slate-50 rounded p-2 text-xs font-mono">
+              {scoreHistory.map((entry, idx) => (
+                <div key={idx} className="mb-1">
+                  <span className="text-slate-500">R{entry.round}:</span>
+                  <span className="ml-1">{entry.playerAvatar} {entry.playerName}</span>
+                  <span className={`ml-2 ${entry.gained > 0 ? 'text-green-600' : 'text-slate-400'}`}>
+                    +{entry.gained}
+                  </span>
+                  <span className="ml-1 text-slate-600">→ {entry.total}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -371,19 +525,29 @@ function playerName(room, id){
 
 function getPlayerStatusIcon(room, player) {
   // Only show status icons during active game phases
-  if (!['selecting'].includes(room.stage)) {
+  if (!['spinning', 'selecting'].includes(room.stage)) {
     return null;
   }
 
   const status = player.status;
   if (!status) return null;
 
-  if (status.hasSubmitted) {
-    return <span className="text-green-500 text-sm" title="Selection complete">✓</span>;
-  } else if (status.role === 'victim') {
-    return <span className="text-yellow-500 text-sm" title="Ranking scenarios...">⏳</span>;
-  } else if (status.role === 'guesser') {
-    return <span className="text-yellow-500 text-sm" title="Placing guesses...">⏳</span>;
+  if (room.stage === 'spinning') {
+    if (status.role === 'victim') {
+      return <span className="text-purple-500 text-sm" title="Spinning the wheel...">🎰</span>;
+    } else {
+      return <span className="text-gray-400 text-sm" title="Waiting for spin...">⏸️</span>;
+    }
+  }
+
+  if (room.stage === 'selecting') {
+    if (status.hasSubmitted) {
+      return <span className="text-green-500 text-sm" title="Selection complete">✓</span>;
+    } else if (status.role === 'victim') {
+      return <span className="text-yellow-500 text-sm" title="Ranking scenarios...">⏳</span>;
+    } else if (status.role === 'guesser') {
+      return <span className="text-yellow-500 text-sm" title="Placing guesses...">⏳</span>;
+    }
   }
 
   return null;
