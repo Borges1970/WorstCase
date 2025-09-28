@@ -158,7 +158,7 @@ export default function App(){
 
             {/* Center: table & actions */}
             <main className="bg-white rounded-xl shadow p-4 lg:col-span-2">
-              {['victimRank','placing','reveal','finished'].includes(room.stage) && (
+              {['victimRank','placing','reveal','roundEnd','finished'].includes(room.stage) && (
                 <div className="mb-3">
                   <div className="text-xs uppercase tracking-wider text-slate-500">Scenario Cards</div>
                   <ol className="mt-2 space-y-2">
@@ -207,6 +207,32 @@ export default function App(){
 
               {room.stage === 'placing' && iAmVictim && (
                 <div className="text-sm text-slate-500">Waiting for all players to place their chips…</div>
+              )}
+
+              {/* Round End Summary */}
+              {room.stage === 'roundEnd' && room.roundEndData && (
+                <div>
+                  <div className="text-center mb-4">
+                    <div className="text-xl font-bold text-emerald-600">Round {room.roundIndex - 1} Complete!</div>
+                    <div className="text-sm text-slate-500 mt-1">Next round starting soon...</div>
+                  </div>
+
+                  <div className="mb-4 p-4 rounded-lg bg-emerald-50 border border-emerald-200">
+                    <div className="text-lg font-semibold mb-2 text-center">Round Scores</div>
+                    <div className="grid gap-2">
+                      {room.roundEndData.roundScores.map(s => (
+                        <div key={s.playerId} className="flex justify-between items-center py-1">
+                          <span>{s.avatar} {s.name}</span>
+                          <div className="text-right">
+                            <span className="text-emerald-600 font-medium">+{s.gained}</span>
+                            <span className="mx-2">→</span>
+                            <span className="font-mono font-bold">{s.total}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               )}
 
               {/* Reveal */}

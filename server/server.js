@@ -74,7 +74,7 @@ function roundsForPlayerCount(n){
 function publicRoom(room){
   return {
     id: room.id,
-    stage: room.stage, // lobby|victimRank|placing|reveal|finished
+    stage: room.stage, // lobby|victimRank|placing|reveal|roundEnd|finished
     spinner: room.spinner,
     roundIndex: room.roundIndex,
     roundsToPlay: room.roundsToPlay,
@@ -82,6 +82,7 @@ function publicRoom(room){
     players: room.players.map(p => ({ id:p.id, name:p.name, avatar:p.avatar, score:p.score })),
     currentCards: room.currentCards, // 5 card texts (public to all)
     chat: room.chat.slice(-100),
+    roundEndData: room.roundEndData, // reveal data during pause
   };
 }
 
@@ -106,6 +107,7 @@ io.on('connection', (socket) => {
       victimRanking: null,    // array[5] of 1..5 set by victim (index = cardIdx)
       guesses: {},           // playerId -> array[5] permutation 1..5
       chat: [],
+      roundEndData: null,    // stores reveal data during pause
     };
     rooms[roomId] = room;
 
@@ -311,11 +313,16 @@ io.on('connection', (socket) => {
 
     io.to(room.id).emit('reveal', reveal);
 
-    // Cleanup & next round
+    // Store reveal data for round end pause
+    room.roundEndData = reveal;
+    room.stage = 'roundEnd';
+
+    // Cleanup & prepare next round
     room.discards.push(...room.currentCards);
     room.roundIndex += 1;
     room.victimIdx = (room.victimIdx + 1) % room.players.length;
 
+    // Show round end summary for 5 seconds
     setTimeout(() => {
       if (room.roundIndex > room.roundsToPlay) {
         room.stage = 'finished';
@@ -325,10 +332,11 @@ io.on('connection', (socket) => {
           winner: sorted[0]
         });
       } else {
+        room.roundEndData = null; // Clear previous round data
         startRound(room);
         io.to(room.id).emit('roomUpdate', publicRoom(room));
       }
-    }, 3500);
+    }, 5000);
   }
 
   // Utility
