@@ -1,19 +1,10 @@
 version: "3.8"
 services:
-  server:
+  app:
     build: ./server
     ports:
       - "4000:4000"
     volumes:
       - .:/app     # 👈 mount the whole project root
     working_dir: /app/server
-    command: sh -c "npm install && npx nodemon server.js"
-    
-  client:
-    build: ./client
-    ports:
-      - "3000:3000"
-    volumes:
-      - ./client:/app
-    environment:
-      - CHOKIDAR_USEPOLLING=true
+    command: sh -c "cd /app/client && npm install && npm run build && cd /app/server && npm install && npx nodemon server.js"

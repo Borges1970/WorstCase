@@ -23,6 +23,17 @@ const app = express();
 const server = http.createServer(app);
 const io = require('socket.io')(server, { cors: { origin: '*' } });
 
+// Serve static files from the React build directory
+const clientBuildPath = path.resolve(__dirname, '../client/build');
+if (fs.existsSync(clientBuildPath)) {
+  app.use(express.static(clientBuildPath));
+
+  // Serve React app for all non-API routes
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(clientBuildPath, 'index.html'));
+  });
+}
+
 const PORT = process.env.PORT || 4000;
 
 // ---- load cards ----

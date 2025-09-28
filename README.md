@@ -2,9 +2,8 @@
 
 ## Running with Docker (recommended)
 1. docker-compose up --build
-2. Access client at http://localhost:3000
-3. Server runs on http://localhost:4000
-4. Stop: docker-compose down
+2. Access the game at http://localhost:4000
+3. Stop: docker-compose down
 
 ## Manual Dev
 ### Server

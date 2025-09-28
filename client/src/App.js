@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import io from 'socket.io-client';
 import { motion } from 'framer-motion';
 
-const SERVER = process.env.REACT_APP_SERVER || 'http://localhost:4000';
+const SERVER = process.env.REACT_APP_SERVER || window.location.origin;
 const socket = io(SERVER, { transports: ['websocket'] });
 
 const spinnerLabel = (s) => ({
