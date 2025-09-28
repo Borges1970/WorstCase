@@ -1,0 +1,14 @@
+{
+  "name": "worst-case-polished",
+  "version": "1.0.0",
+  "description": "Worst-Case Scenario multiplayer game",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "cd server && node server.js",
+    "build": "cd client && npm run build",
+    "dev": "docker-compose up --build"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
