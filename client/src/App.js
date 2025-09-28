@@ -234,17 +234,17 @@ export default function App(){
               {/* Non-victim placement UI */}
               {room.stage === 'placing' && !iAmVictim && (
                 <div>
-                  <div className="font-semibold mb-4">Drag chips (1-5) to cards to match the Victim's ranking.</div>
+                  <div className="font-semibold mb-4">Drag rankings to cards to match how you think the Victim ranked them.</div>
                   <DragDropRanking
                     cards={room.currentCards}
                     ranking={myGuess}
                     onChange={setMyGuess}
-                    mode="chips"
+                    mode="guessing"
                   />
                   <button
                     onClick={submitGuess}
                     className="mt-4 px-4 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700">
-                    Submit Chips
+                    Submit Guess
                   </button>
                 </div>
               )}
@@ -433,15 +433,13 @@ function DragDropRanking({ cards, ranking, onChange, mode }) {
               {getRankingForCard(cardIdx) ? (
                 <div className="flex items-center gap-1">
                   <div className={`px-3 py-1 rounded-full text-white font-medium ${
-                    mode === 'ranking'
-                      ? getRankingForCard(cardIdx) === 1 ? 'bg-green-500' :
-                        getRankingForCard(cardIdx) === 2 ? 'bg-yellow-500' :
-                        getRankingForCard(cardIdx) === 3 ? 'bg-orange-500' :
-                        getRankingForCard(cardIdx) === 4 ? 'bg-red-500' :
-                        'bg-red-700'
-                      : 'bg-blue-500'
+                    getRankingForCard(cardIdx) === 1 ? 'bg-green-500' :
+                    getRankingForCard(cardIdx) === 2 ? 'bg-yellow-500' :
+                    getRankingForCard(cardIdx) === 3 ? 'bg-orange-500' :
+                    getRankingForCard(cardIdx) === 4 ? 'bg-red-500' :
+                    'bg-red-700'
                   }`}>
-                    {mode === 'ranking' ? `Rank ${getRankingForCard(cardIdx)}` : `Chip ${getRankingForCard(cardIdx)}`}
+                    Rank {getRankingForCard(cardIdx)}
                   </div>
                   <button
                     onClick={() => removeRanking(cardIdx)}
@@ -452,7 +450,7 @@ function DragDropRanking({ cards, ranking, onChange, mode }) {
                 </div>
               ) : (
                 <div className="px-3 py-1 border-2 border-dashed border-slate-300 rounded text-slate-400 text-sm">
-                  Drop {mode === 'ranking' ? 'rank' : 'chip'} here
+                  Drop rank here
                 </div>
               )}
             </div>
@@ -460,10 +458,10 @@ function DragDropRanking({ cards, ranking, onChange, mode }) {
         ))}
       </div>
 
-      {/* Available rankings/chips to drag */}
+      {/* Available rankings to drag */}
       <div className="space-y-3">
         <div className="text-sm font-medium text-slate-600">
-          {mode === 'ranking' ? 'Available Rankings' : 'Available Chips'}
+          Available Rankings
         </div>
         <div className="flex gap-2 flex-wrap">
           {[1, 2, 3, 4, 5].map(rank => {
@@ -476,20 +474,16 @@ function DragDropRanking({ cards, ranking, onChange, mode }) {
                 className={`px-4 py-2 rounded-lg border-2 cursor-move select-none ${
                   isUsed
                     ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
-                    : mode === 'ranking'
-                      ? rank === 1 ? 'bg-green-50 border-green-300 text-green-700 hover:bg-green-100' :
-                        rank === 2 ? 'bg-yellow-50 border-yellow-300 text-yellow-700 hover:bg-yellow-100' :
-                        rank === 3 ? 'bg-orange-50 border-orange-300 text-orange-700 hover:bg-orange-100' :
-                        rank === 4 ? 'bg-red-50 border-red-300 text-red-700 hover:bg-red-100' :
-                        'bg-red-50 border-red-400 text-red-800 hover:bg-red-100'
-                      : 'bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100'
+                    : rank === 1 ? 'bg-green-50 border-green-300 text-green-700 hover:bg-green-100' :
+                      rank === 2 ? 'bg-yellow-50 border-yellow-300 text-yellow-700 hover:bg-yellow-100' :
+                      rank === 3 ? 'bg-orange-50 border-orange-300 text-orange-700 hover:bg-orange-100' :
+                      rank === 4 ? 'bg-red-50 border-red-300 text-red-700 hover:bg-red-100' :
+                      'bg-red-50 border-red-400 text-red-800 hover:bg-red-100'
                 }`}
               >
-                {mode === 'ranking'
-                  ? rank === 1 ? '1 (Least Bad)' :
-                    rank === 5 ? '5 (Worst)' :
-                    rank.toString()
-                  : `Chip ${rank}`
+                {rank === 1 ? '1 (Least Bad)' :
+                 rank === 5 ? '5 (Worst)' :
+                 rank.toString()
                 }
               </div>
             );
