@@ -74,7 +74,7 @@ function roundsForPlayerCount(n){
 function publicRoom(room){
   return {
     id: room.id,
-    stage: room.stage, // lobby|victimRank|placing|reveal|roundEnd|finished
+    stage: room.stage, // lobby|selecting|reveal|roundEnd|finished
     spinner: room.spinner,
     roundIndex: room.roundIndex,
     roundsToPlay: room.roundsToPlay,
@@ -165,7 +165,7 @@ io.on('connection', (socket) => {
       room.discards.length = 0;
     }
     room.spinner = spinnerResult();
-    room.stage = 'victimRank';
+    room.stage = 'selecting'; // Both victim and players can select simultaneously
     room.currentCards = room.deck.splice(0,5);
     room.victimRanking = null;
     room.guesses = {};
@@ -193,7 +193,7 @@ io.on('connection', (socket) => {
   // Victim submits secret ranking: array of 5 numbers (1..5), permutation
   socket.on('victimRanking', ({ roomId, ranking }) => {
     const room = rooms[roomId]; if (!room) return;
-    if (room.stage !== 'victimRank') return;
+    if (room.stage !== 'selecting') return;
 
     const victim = room.players[room.victimIdx];
     if (victim.id !== socket.id) return socket.emit('errorMsg','Only Victim submits ranking');
@@ -204,20 +204,22 @@ io.on('connection', (socket) => {
     // Mark victim as submitted
     room.playerStatus[socket.id].hasSubmitted = true;
 
-    // Announce to all to start placing guesses
-    room.stage = 'placing';
-    io.to(room.id).emit('placingBegan', { room: publicRoom(room) });
+    // Send updated room data to show victim completion
+    io.to(room.id).emit('roomUpdate', publicRoom(room));
+
+    // Check if we can proceed to reveal
+    checkForRoundCompletion(room);
   });
 
   // Non-victims submit their chip placements: array of 5 numbers 1..5 permutation
   socket.on('placeGuess', ({ roomId, guess }) => {
     const room = rooms[roomId]; if (!room) return;
-    if (room.stage !== 'placing') return;
+    if (room.stage !== 'selecting') return;
 
     const victim = room.players[room.victimIdx];
     if (socket.id === victim.id) return socket.emit('errorMsg','Victim does not guess');
 
-    if (!isValidPerm15(guess)) return socket.emit('errorMsg','Your chips must be 1..5, used once each');
+    if (!isValidPerm15(guess)) return socket.emit('errorMsg','Your guesses must be 1..5, used once each');
     room.guesses[socket.id] = guess.slice();
 
     // Mark player as submitted
@@ -226,13 +228,22 @@ io.on('connection', (socket) => {
     // Send updated room data to show completion status
     io.to(room.id).emit('roomUpdate', publicRoom(room));
 
-    // When all non-victims have placed and victimRanking is ready, reveal + score
+    // Check if we can proceed to reveal
+    checkForRoundCompletion(room);
+  });
+
+  // Check if all players have submitted and we can reveal
+  function checkForRoundCompletion(room) {
+    const victim = room.players[room.victimIdx];
     const nonVictims = room.players.filter((_, idx) => idx !== room.victimIdx);
-    const allPlaced = nonVictims.every(p => room.guesses[p.id]);
-    if (allPlaced && room.victimRanking) {
+
+    const victimDone = room.victimRanking !== null;
+    const allPlayersDone = nonVictims.every(p => room.guesses[p.id]);
+
+    if (victimDone && allPlayersDone) {
       scoreAndReveal(room);
     }
-  });
+  }
 
   function scoreAndReveal(room){
     room.stage = 'reveal';

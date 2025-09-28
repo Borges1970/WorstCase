@@ -200,7 +200,7 @@ export default function App(){
 
             {/* Center: table & actions */}
             <main className="bg-white rounded-xl shadow p-4 lg:col-span-2">
-              {['victimRank','placing','reveal','roundEnd','finished'].includes(room.stage) && (
+              {['selecting','reveal','roundEnd','finished'].includes(room.stage) && (
                 <div className="mb-3">
                   <div className="text-xs uppercase tracking-wider text-slate-500">Scenario Cards</div>
                   <ol className="mt-2 space-y-2">
@@ -211,8 +211,8 @@ export default function App(){
                 </div>
               )}
 
-              {/* Victim ranking UI */}
-              {room.stage === 'victimRank' && iAmVictim && victimNeedsRanking && (
+              {/* Simultaneous selection UI */}
+              {room.stage === 'selecting' && iAmVictim && victimNeedsRanking && (
                 <div>
                   <div className="font-semibold mb-4">You are the Victim — drag cards to rank them (1 = least bad, 5 = worst).</div>
                   <DragDropRanking
@@ -229,12 +229,7 @@ export default function App(){
                 </div>
               )}
 
-              {room.stage === 'victimRank' && !iAmVictim && (
-                <div className="text-sm text-slate-500">Victim is ranking the scenarios…</div>
-              )}
-
-              {/* Non-victim placement UI */}
-              {room.stage === 'placing' && !iAmVictim && (
+              {room.stage === 'selecting' && !iAmVictim && (
                 <div>
                   <div className="font-semibold mb-4">Drag rankings to cards to match how you think the Victim ranked them.</div>
                   <DragDropRanking
@@ -249,10 +244,6 @@ export default function App(){
                     Submit Guess
                   </button>
                 </div>
-              )}
-
-              {room.stage === 'placing' && iAmVictim && (
-                <div className="text-sm text-slate-500">Waiting for all players to place their chips…</div>
               )}
 
               {/* Round End Summary */}
@@ -371,7 +362,7 @@ function playerName(room, id){
 
 function getPlayerStatusIcon(room, player) {
   // Only show status icons during active game phases
-  if (!['victimRank', 'placing'].includes(room.stage)) {
+  if (!['selecting'].includes(room.stage)) {
     return null;
   }
 
@@ -380,14 +371,10 @@ function getPlayerStatusIcon(room, player) {
 
   if (status.hasSubmitted) {
     return <span className="text-green-500 text-sm" title="Selection complete">✓</span>;
-  } else if (status.role === 'victim' && room.stage === 'victimRank') {
+  } else if (status.role === 'victim') {
     return <span className="text-yellow-500 text-sm" title="Ranking scenarios...">⏳</span>;
-  } else if (status.role === 'guesser' && room.stage === 'placing') {
+  } else if (status.role === 'guesser') {
     return <span className="text-yellow-500 text-sm" title="Placing guesses...">⏳</span>;
-  } else if (status.role === 'guesser' && room.stage === 'victimRank') {
-    return <span className="text-gray-400 text-sm" title="Waiting for victim">⏸️</span>;
-  } else if (status.role === 'victim' && room.stage === 'placing') {
-    return <span className="text-gray-400 text-sm" title="Waiting for guesses">⏸️</span>;
   }
 
   return null;
