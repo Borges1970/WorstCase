@@ -22,6 +22,7 @@ export default function App(){
   const [room, setRoom] = useState(null);
   const [chat, setChat] = useState([]);
   const [msg, setMsg] = useState('');
+  const [shareableLink, setShareableLink] = useState('');
 
   // Victim-only ranking state
   const [iAmVictim, setIAmVictim] = useState(false);
@@ -37,8 +38,22 @@ export default function App(){
   const myId = me?.id;
 
   useEffect(() => {
+    // Check URL for room ID on component mount
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlRoomId = urlParams.get('room');
+    if (urlRoomId) {
+      setRoomId(urlRoomId);
+    }
+
     socket.on('connect', () => setMe({ id: socket.id }));
-    socket.on('roomCreated', ({ roomId, room }) => { setRoomId(roomId); setRoom(room); });
+    socket.on('roomCreated', ({ roomId, room }) => {
+      setRoomId(roomId);
+      setRoom(room);
+      const link = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
+      setShareableLink(link);
+      // Update URL without page reload
+      window.history.pushState({}, '', link);
+    });
     socket.on('roomUpdate', (r) => setRoom(r));
     socket.on('chatUpdate', (c) => setChat(c));
 
@@ -91,6 +106,12 @@ export default function App(){
     setMsg('');
   }
 
+  function copyShareableLink(){
+    navigator.clipboard.writeText(shareableLink).then(() => {
+      alert('Room link copied to clipboard!');
+    });
+  }
+
   function submitVictimRanking(){
     // Must be a permutation of 1..5
     if (!isPerm15(victimRanking)) { alert('Assign each number 1–5 exactly once.'); return; }
@@ -131,6 +152,25 @@ export default function App(){
                 <div className="font-semibold">Players</div>
                 <div className="text-sm text-slate-500">Round {room.roundIndex}/{room.roundsToPlay}</div>
               </div>
+
+              {shareableLink && room.stage === 'lobby' && (
+                <div className="mb-3 p-3 rounded bg-blue-50 border border-blue-200">
+                  <div className="text-xs uppercase tracking-wider text-blue-600 mb-1">Share Room</div>
+                  <div className="flex gap-2">
+                    <input
+                      className="flex-1 text-xs font-mono p-1 border rounded bg-white"
+                      value={shareableLink}
+                      readOnly
+                    />
+                    <button
+                      onClick={copyShareableLink}
+                      className="px-2 py-1 text-xs rounded bg-blue-600 text-white hover:bg-blue-700"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+              )}
               <ul className="space-y-2">
                 {room.players.map((p,idx) => (
                   <li key={p.id} className={`flex items-center justify-between rounded px-2 py-1 ${p.id===myId?'bg-indigo-50':''}`}>
