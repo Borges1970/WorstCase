@@ -212,14 +212,16 @@ export default function App(){
               {/* Victim ranking UI */}
               {room.stage === 'victimRank' && iAmVictim && victimNeedsRanking && (
                 <div>
-                  <div className="font-semibold mb-2">You are the Victim — rank the cards (1 = least bad, 5 = worst). Use each number once.</div>
-                  <RankGrid
-                    values={victimRanking}
-                    onChange={(idx, val) => setVictimRanking(setValAt(victimRanking, idx, val))}
+                  <div className="font-semibold mb-4">You are the Victim — drag cards to rank them (1 = least bad, 5 = worst).</div>
+                  <DragDropRanking
+                    cards={room.currentCards}
+                    ranking={victimRanking}
+                    onChange={setVictimRanking}
+                    mode="ranking"
                   />
                   <button
                     onClick={submitVictimRanking}
-                    className="mt-3 px-3 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700">
+                    className="mt-4 px-4 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700">
                     Submit Ranking
                   </button>
                 </div>
@@ -232,14 +234,16 @@ export default function App(){
               {/* Non-victim placement UI */}
               {room.stage === 'placing' && !iAmVictim && (
                 <div>
-                  <div className="font-semibold mb-2">Place your chips (1..5, once each) to match the Victim’s ranking.</div>
-                  <RankGrid
-                    values={myGuess}
-                    onChange={(idx, val) => setMyGuess(setValAt(myGuess, idx, val))}
+                  <div className="font-semibold mb-4">Drag chips (1-5) to cards to match the Victim's ranking.</div>
+                  <DragDropRanking
+                    cards={room.currentCards}
+                    ranking={myGuess}
+                    onChange={setMyGuess}
+                    mode="chips"
                   />
                   <button
                     onClick={submitGuess}
-                    className="mt-3 px-3 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700">
+                    className="mt-4 px-4 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700">
                     Submit Chips
                   </button>
                 </div>
@@ -363,7 +367,140 @@ function playerName(room, id){
   return p ? `${p.avatar} ${p.name}` : 'Unknown';
 }
 
-/** Ranking/Chips grid control */
+/** Drag and Drop Ranking Interface */
+function DragDropRanking({ cards, ranking, onChange, mode }) {
+  const [draggedItem, setDraggedItem] = useState(null);
+  const [draggedType, setDraggedType] = useState(null); // 'card' or 'chip'
+
+  const handleDragStart = (e, item, type) => {
+    setDraggedItem(item);
+    setDraggedType(type);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = (e, dropZone, dropIndex) => {
+    e.preventDefault();
+
+    if (draggedType === 'card') {
+      // Dragging a card to a ranking position
+      const newRanking = [...ranking];
+      newRanking[draggedItem] = dropZone;
+      onChange(newRanking);
+    } else if (draggedType === 'chip') {
+      // Dragging a chip to a card position
+      const newRanking = [...ranking];
+      newRanking[dropIndex] = draggedItem;
+      onChange(newRanking);
+    }
+
+    setDraggedItem(null);
+    setDraggedType(null);
+  };
+
+  const removeRanking = (cardIdx) => {
+    const newRanking = [...ranking];
+    newRanking[cardIdx] = null;
+    onChange(newRanking);
+  };
+
+  const getRankingForCard = (cardIdx) => ranking[cardIdx];
+  const getCardForRanking = (rank) => ranking.findIndex(r => r === rank);
+
+  return (
+    <div className="space-y-6">
+      {/* Cards with assigned rankings */}
+      <div className="space-y-3">
+        <div className="text-sm font-medium text-slate-600">Scenario Cards</div>
+        {cards.map((cardText, cardIdx) => (
+          <div
+            key={cardIdx}
+            className="flex items-center gap-3 p-3 rounded-lg border bg-slate-50"
+            onDragOver={handleDragOver}
+            onDrop={(e) => handleDrop(e, null, cardIdx)}
+          >
+            <div className="text-sm font-medium text-slate-500 min-w-[60px]">
+              Card {cardIdx + 1}:
+            </div>
+            <div className="flex-1 text-sm">{cardText}</div>
+
+            {/* Drop zone for this card */}
+            <div className="flex items-center gap-2">
+              {getRankingForCard(cardIdx) ? (
+                <div className="flex items-center gap-1">
+                  <div className={`px-3 py-1 rounded-full text-white font-medium ${
+                    mode === 'ranking'
+                      ? getRankingForCard(cardIdx) === 1 ? 'bg-green-500' :
+                        getRankingForCard(cardIdx) === 2 ? 'bg-yellow-500' :
+                        getRankingForCard(cardIdx) === 3 ? 'bg-orange-500' :
+                        getRankingForCard(cardIdx) === 4 ? 'bg-red-500' :
+                        'bg-red-700'
+                      : 'bg-blue-500'
+                  }`}>
+                    {mode === 'ranking' ? `Rank ${getRankingForCard(cardIdx)}` : `Chip ${getRankingForCard(cardIdx)}`}
+                  </div>
+                  <button
+                    onClick={() => removeRanking(cardIdx)}
+                    className="text-slate-400 hover:text-red-500 text-lg"
+                  >
+                    ×
+                  </button>
+                </div>
+              ) : (
+                <div className="px-3 py-1 border-2 border-dashed border-slate-300 rounded text-slate-400 text-sm">
+                  Drop {mode === 'ranking' ? 'rank' : 'chip'} here
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Available rankings/chips to drag */}
+      <div className="space-y-3">
+        <div className="text-sm font-medium text-slate-600">
+          {mode === 'ranking' ? 'Available Rankings' : 'Available Chips'}
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          {[1, 2, 3, 4, 5].map(rank => {
+            const isUsed = getCardForRanking(rank) !== -1;
+            return (
+              <div
+                key={rank}
+                draggable={!isUsed}
+                onDragStart={(e) => handleDragStart(e, rank, 'chip')}
+                className={`px-4 py-2 rounded-lg border-2 cursor-move select-none ${
+                  isUsed
+                    ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                    : mode === 'ranking'
+                      ? rank === 1 ? 'bg-green-50 border-green-300 text-green-700 hover:bg-green-100' :
+                        rank === 2 ? 'bg-yellow-50 border-yellow-300 text-yellow-700 hover:bg-yellow-100' :
+                        rank === 3 ? 'bg-orange-50 border-orange-300 text-orange-700 hover:bg-orange-100' :
+                        rank === 4 ? 'bg-red-50 border-red-300 text-red-700 hover:bg-red-100' :
+                        'bg-red-50 border-red-400 text-red-800 hover:bg-red-100'
+                      : 'bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100'
+                }`}
+              >
+                {mode === 'ranking'
+                  ? rank === 1 ? '1 (Least Bad)' :
+                    rank === 5 ? '5 (Worst)' :
+                    rank.toString()
+                  : `Chip ${rank}`
+                }
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Legacy Ranking/Chips grid control - kept for fallback */
 function RankGrid({ values, onChange }){
   // 5 rows, each row select 1..5. Client-side we allow duplicates while editing;
   // validation happens on submit (must be permutation).
