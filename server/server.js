@@ -134,7 +134,11 @@ io.on('connection', (socket) => {
 
     socket.join(roomId);
     room.players.push({ id: socket.id, name: name || 'Player', avatar: avatar(), score: 0 });
-    io.to(roomId).emit('roomUpdate', publicRoom(room));
+
+    // Tell the joining player they successfully joined
+    socket.emit('roomJoined', { roomId, room: publicRoom(room) });
+    // Tell everyone else about the new player
+    socket.to(roomId).emit('roomUpdate', publicRoom(room));
   });
 
   socket.on('sendChat', ({ roomId, message }) => {

@@ -54,8 +54,17 @@ export default function App(){
       // Update URL without page reload
       window.history.pushState({}, '', link);
     });
+    socket.on('roomJoined', ({ roomId, room }) => {
+      setRoomId(roomId);
+      setRoom(room);
+      const link = `${window.location.origin}${window.location.pathname}?room=${roomId}`;
+      setShareableLink(link);
+      // Update URL without page reload
+      window.history.pushState({}, '', link);
+    });
     socket.on('roomUpdate', (r) => setRoom(r));
     socket.on('chatUpdate', (c) => setChat(c));
+    socket.on('errorMsg', (msg) => alert(msg));
 
     // Round lifecycle
     socket.on('roundStarted', ({ room }) => {
